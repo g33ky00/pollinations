@@ -65,6 +65,36 @@ export type OpenAIImageUsage = {
     };
 };
 
+export const OPENAI_EMBEDDING_USAGE_PATHS = {
+    promptTextTokens: ["prompt_tokens"],
+} as const satisfies Partial<Record<UsageType, readonly string[]>>;
+
+export type OpenAIEmbeddingUsage = {
+    prompt_tokens: number;
+    total_tokens: number;
+};
+
+export function getOpenAIEmbeddingUsage(
+    value: unknown,
+): OpenAIEmbeddingUsage | null {
+    if (!value || typeof value !== "object" || !("usage" in value)) {
+        return null;
+    }
+    const usage = value.usage;
+    if (
+        !usage ||
+        typeof usage !== "object" ||
+        !("prompt_tokens" in usage) ||
+        !isTokenCount(usage.prompt_tokens) ||
+        !("total_tokens" in usage) ||
+        !isTokenCount(usage.total_tokens) ||
+        usage.total_tokens !== usage.prompt_tokens
+    ) {
+        return null;
+    }
+    return usage as OpenAIEmbeddingUsage;
+}
+
 export function getOpenAIImageUsage(value: unknown): OpenAIImageUsage | null {
     if (!value || typeof value !== "object" || !("usage" in value)) {
         return null;
@@ -128,6 +158,9 @@ export const FALLBACK_TARGET_HEADER = "x-fallback-target";
  * name rather than the listing anyone can act on.
  */
 export const MODEL_USED_HEADER = "x-model-used";
+
+/** The canonical model requested, after alias resolution. */
+export const MODEL_REQUESTED_HEADER = "x-model-requested";
 
 /**
  * Convert OpenAI usage format to Usage format.
@@ -249,6 +282,35 @@ export function openaiUsageToUsage(openaiUsage: {
         completionImageTokens,
         completionReasoningTokens,
     };
+}
+
+/** Convert OpenAI Responses token accounting into the shared billing shape. */
+export function responsesUsageToUsage(responsesUsage: {
+    input_tokens: number;
+    output_tokens: number;
+    total_tokens: number;
+    input_tokens_details?: {
+        cached_tokens?: number | null;
+        cache_write_tokens?: number | null;
+        audio_tokens?: number | null;
+        image_tokens?: number | null;
+        video_tokens?: number | null;
+    } | null;
+    output_tokens_details?: {
+        reasoning_tokens?: number | null;
+        audio_tokens?: number | null;
+        image_tokens?: number | null;
+        accepted_prediction_tokens?: number | null;
+        rejected_prediction_tokens?: number | null;
+    } | null;
+}): Usage {
+    return openaiUsageToUsage({
+        prompt_tokens: responsesUsage.input_tokens,
+        completion_tokens: responsesUsage.output_tokens,
+        total_tokens: responsesUsage.total_tokens,
+        prompt_tokens_details: responsesUsage.input_tokens_details,
+        completion_tokens_details: responsesUsage.output_tokens_details,
+    });
 }
 
 export function openaiImageUsageToUsage(usage: OpenAIImageUsage): Usage {

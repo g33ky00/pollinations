@@ -1,22 +1,22 @@
 # GPU Instances
 
-Last updated: 2026-08-19
+Last updated: 2026-09-02
 
 ## Capacity Summary
 
 | Model | Workers | GPUs | Provider | Cost/hr | Status |
 |-------|---------|------|----------|---------|--------|
-| Flux (FP4) | 2 | 2x RTX PRO 4000 Blackwell | Vast.ai | $0.460000/hr all-in | **ACTIVE — two production, Vast-only** |
+| Flux (FP4) | 2 | 2x RTX PRO 4000 Blackwell | Vast.ai | $0.446667/hr all-in | **ACTIVE — two production, Vast-only** |
 | Z-Image | 1 | RTX 5090 | Vast.ai | $0.351111/hr all-in | **ACTIVE — one production with Fal spillover** |
 | Klein 4B | 1 | RTX 3090 | Vast.ai | $0.150000/hr all-in | **ACTIVE — Vast production** |
-| DreamShaper 8 LCM (`dreamshaper`, alias `sana`) | 2 | 2x RTX 4070 | Vast.ai | $0.196889/hr all-in | **ACTIVE — production** |
+| DreamShaper 8 LCM (`dreamshaper`, alias `sana`) | 2 | RTX 4070 + RTX 3060 | Vast.ai | $0.169444/hr all-in | **ACTIVE — production** |
 | LTX-2 + ACE-Step | 0 active routes | GH200 (historical) | Lambda Labs | Verify provider account | **RETIRED from production** |
 
-At capture time, the six running Vast instances cost **$1.158000/hr** in total
-(**$833.76 per 30-day month**).
+At capture time, the six running Vast instances cost **$1.117222/hr** in total
+(**$804.40 per 30-day month**).
 All six are production workers; there is no isolated canary left running.
 
-Live verification on 2026-08-19 confirmed that all six instances are in both
+Live verification on 2026-09-02 confirmed that all six instances are in both
 `actual_status=running` and `intended_status=running`, every model server and
 named tunnel is healthy, and the registry contains both Flux hostnames, the
 shared Z-Image hostname, and both DreamShaper hostnames. Klein is not in the
@@ -37,7 +37,7 @@ exists after the routing change deploys.
 
 | Worker | Vast instance | Machine / region | GPU | All-in rate | Status |
 |--------|---------------|------------------|-----|-------------|--------|
-| dreamshaper-vast-01 | 48108043 | 94288 / New Zealand | RTX 4070 | $0.103000/hr | ACTIVE — named tunnel `dreamshaper-canary-46600159.myceli.ai` |
+| dreamshaper-vast-01 | 49063196 | 143507 / Mexico, MX | RTX 3060 | $0.075556/hr | ACTIVE — named tunnel `dreamshaper-canary-49063196.myceli.ai` |
 | dreamshaper-vast-02 | 47789794 | 100803 / Romania, RO | RTX 4070 | $0.093889/hr | ACTIVE — named tunnel `dreamshaper-canary-47789794.myceli.ai` |
 
 Config: `Lykon/dreamshaper-8` + fused `lcm-lora-sdv1-5`, `LCMScheduler`, TAESD
@@ -51,20 +51,24 @@ gen retries the other registered DreamShaper hostname. With three processes,
 each GPU admits at most six in-flight requests instead of accumulating an
 unbounded local backlog.
 
-Instance `48108043` replaced `46607014` on 2026-08-19 and reduced the slot from
-`$0.150000/hr` to `$0.103000/hr`, saving **$0.047000/hr** or **$33.84 per
-30-day month** in Vast credits. The New Zealand host had Vast reliability
-`0.9977049` when rented and preserves machine and regional diversity from the
-Romania replica.
+Instance `49063196` replaced `48108043` on 2026-08-29 and reduced the slot from
+`$0.103000/hr` to `$0.075556/hr`, saving **$0.027444/hr** or **$19.76 per
+30-day month** in Vast credits. The Mexico host had Vast reliability
+`0.9968025` when promoted and preserves machine and regional diversity from
+the Romania replica.
 
-Qualification passed authentication, fixed-seed byte parity, 512x512 and
-clamped dimension limits, output quality, queue shedding, and restart
-recovery. At 200 RPM the RTX 4070 served 60/60 requests after restart. At 300
-RPM it served 60/60 before restart and 29/30 in a later short probe, shedding
-the remaining request for cross-worker retry. In the final post-cutover window
-it served 58 production requests with zero backend errors at **0.23s mean**
-and **0.40s p95** generation time; five queue-full responses were retried on
-the other DreamShaper worker.
+Qualification passed authentication rejection, a public Cloudflare health
+check and 512x512 render, restart recovery, queue shedding, and sustained
+load. The RTX 3060 served 60/60 requests at concurrency 3 and sustained
+**4.42 img/s**. During cutover it served 265 attributed production requests;
+the final one-minute fleet window after the old host drained recorded 270
+successful requests, one client 4xx, zero 5xx, and **0.98s p95** latency. The
+old instance was removed from the registry before destruction, and Vast then
+reported only the two intended DreamShaper instances with no retained storage
+for `48108043`.
+
+Instance `48108043` had previously replaced `46607014` on 2026-08-19, reducing
+that slot from `$0.150000/hr` to `$0.103000/hr` before its own replacement.
 
 The canary exposed two reusable deployment requirements. Prefer the smaller
 `nvidia/cuda:12.8.1-cudnn-runtime-ubuntu24.04` image; the previous Vast
@@ -111,18 +115,24 @@ the registered `flux` pool through `callSelfHostedServer`.
 | Worker | Vast instance | Machine / region | GPU | All-in rate | Status |
 |--------|---------------|------------------|-----|-------------|--------|
 | flux-vast-04 | 47389078 | 59339 / France, FR | RTX PRO 4000 Blackwell 24 GB | $0.230000/hr | ACTIVE (promoted 2026-08-10) — registered hostname `flux-vast-04.pollinations.ai` |
-| flux-vast-06 | 47259458 | 102863 / Quebec, CA | RTX PRO 4000 Blackwell 24 GB | $0.230000/hr | ACTIVE (promoted 2026-08-09) — registered hostname `flux-vast-06.pollinations.ai` |
+| flux-vast-06 | 49145048 | 140800 / Illinois, US | RTX PRO 4000 Blackwell 24 GB | $0.216667/hr | ACTIVE — registered hostname `flux-maintenance-canary-49145048.myceli.ai` |
 
 Instance `47389078` replaced `46491202` on 2026-08-10. The France host is
 machine `59339`, has Vast reliability `0.998`, and costs **$165.60 per 30-day
 month** in Vast credits. It saves **$0.131111/hr**, or **$94.40 per 30-day
 month**, compared with the replaced RTX 5090 slot. The two-worker FLUX pool now
-costs `$0.460000/hr` all-in.
+costs `$0.446667/hr` all-in.
 
-Instance `47259458` previously replaced `47018211`. The Quebec host is machine
-`102863`, has Vast reliability `0.99595`, and costs **$165.60 per 30-day
-month** in Vast credits. It saves **$0.057778/hr**, or **$41.60 per 30-day
-month**, compared with the replaced slot.
+Instance `49145048` replaced maintenance-bound instance `47259458` before its
+scheduled 2026-08-30 downtime. The Illinois host is machine `140800`, had Vast
+reliability `0.9965586` at the 2026-09-02 audit, and costs **$156.00 per
+30-day month** in Vast credits. It saves **$0.013333/hr**, or **$9.60 per
+30-day month**, compared with the replaced slot. Its named tunnel is healthy,
+and the worker is actively heartbeating in the production `flux` registry.
+
+Instance `47259458` had previously replaced `47018211`. The retired Quebec
+host was machine `102863`, cost `$0.230000/hr`, and saved **$0.057778/hr**, or
+**$41.60 per 30-day month**, compared with that earlier slot.
 
 Qualification on the replacement passed authentication rejection, 512x512,
 1024x1024, 1024x768, and 768x1024 generation, four-request burst handling,
@@ -140,7 +150,7 @@ fast 503 shedding under concurrent load. Treat the two-worker Vast pool as the
 capacity guard. Queue admission must be hardened separately; there is no
 Replicate fallback.
 
-The post-promotion audit found that `47259458` still had
+A previous post-promotion audit found that `47259458` still had
 `HEARTBEAT_ENABLED=false` even though its named tunnel was healthy. That made
 the second paid worker invisible to normal Flux dispatch and left
 `46491202` carrying the pool alone. The flag was corrected, the worker was

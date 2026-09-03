@@ -3,6 +3,7 @@ import type {
     AccountBalance,
     AccountKey,
     AccountProfile,
+    AccountQuestsResponse,
     AudioBinaryResponse,
     AudioGenerateOptions,
     AuthorizeDeviceOptions,
@@ -14,9 +15,11 @@ import type {
     CreateKeyOptions,
     DailyUsageOptions,
     DailyUsageResponse,
+    DeveloperEarningsResponse,
     DeviceAuthorization,
     DeviceCodeResponse,
     DeviceTokenResponse,
+    EarningsOptions,
     ImageEditOptions,
     ImageGenerateOptions,
     ImageGenerateV1Options,
@@ -138,6 +141,19 @@ interface SSEParseResult<T> {
     remainingBuffer: string;
 }
 
+function chatStreamError(chunk: unknown): PollinationsError | null {
+    if (!chunk || typeof chunk !== "object" || !("error" in chunk)) return null;
+
+    const error = (chunk as { error: unknown }).error;
+    let message = "Streaming request failed";
+    if (typeof error === "string") message = error;
+    else if (error && typeof error === "object" && "message" in error) {
+        const errorMessage = (error as { message: unknown }).message;
+        if (typeof errorMessage === "string") message = errorMessage;
+    }
+    return new PollinationsError(message, "STREAM_ERROR", 502);
+}
+
 // Parse SSE lines from buffer and extract data
 function parseSSEBuffer<T>(
     buffer: string,
@@ -146,18 +162,13 @@ function parseSSEBuffer<T>(
     const lines = buffer.split("\n");
     const remainingBuffer = lines.pop() || "";
     const chunks: T[] = [];
-
     for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed || trimmed === "data: [DONE]") continue;
         if (trimmed.startsWith("data: ")) {
-            try {
-                const parsed = parseChunk(trimmed.slice(6));
-                if (parsed !== null) {
-                    chunks.push(parsed);
-                }
-            } catch {
-                // Skip invalid JSON
+            const parsed = parseChunk(trimmed.slice(6));
+            if (parsed !== null) {
+                chunks.push(parsed);
             }
         }
     }
@@ -890,14 +901,35 @@ export class Pollinations {
                 if (done) break;
 
                 buffer += decoder.decode(value, { stream: true });
-                const result = parseSSEBuffer<ChatStreamChunk>(
-                    buffer,
-                    (data) => JSON.parse(data) as ChatStreamChunk,
-                );
+                const result = parseSSEBuffer<unknown>(buffer, (data) => {
+                    try {
+                        return JSON.parse(data) as unknown;
+                    } catch {
+                        throw new PollinationsError(
+                            "Invalid JSON in chat completion stream",
+                            "MALFORMED_STREAM",
+                            502,
+                        );
+                    }
+                });
 
                 buffer = result.remainingBuffer;
                 for (const chunk of result.chunks) {
-                    yield chunk;
+                    const error = chatStreamError(chunk);
+                    if (error) throw error;
+                    if (
+                        !chunk ||
+                        typeof chunk !== "object" ||
+                        !("choices" in chunk) ||
+                        !Array.isArray((chunk as { choices: unknown }).choices)
+                    ) {
+                        throw new PollinationsError(
+                            "Invalid chat completion stream event",
+                            "MALFORMED_STREAM",
+                            502,
+                        );
+                    }
+                    yield chunk as ChatStreamChunk;
                 }
             }
         } finally {
@@ -1399,6 +1431,21 @@ export class Pollinations {
     }
 
     /**
+     * Get quest catalog with the authenticated account's status
+     *
+     * @example
+     * ```ts
+     * const { quests } = await pollinations.accountQuests();
+     * quests.forEach(q => console.log(q.title, q.status));
+     * ```
+     */
+    async accountQuests(): Promise<AccountQuestsResponse> {
+        return this.getJson<AccountQuestsResponse>(
+            `${this.baseUrl}/account/quests`,
+        );
+    }
+
+    /**
      * Get usage history
      *
      * @example
@@ -1484,6 +1531,30 @@ export class Pollinations {
         const url = `${this.baseUrl}/account/key/usage${qs ? `?${qs}` : ""}`;
 
         return this.getJson<UsageResponse>(url);
+    }
+
+    /**
+     * Get developer earnings from BYOP apps and community models
+     *
+     * @example
+     * ```ts
+     * const { daily, perEntity } = await pollinations.accountEarnings({ days: 30 });
+     * perEntity.forEach(e => console.log(e.entity_name, e.pollen_earned));
+     * ```
+     */
+    async accountEarnings(
+        options: EarningsOptions = {},
+    ): Promise<DeveloperEarningsResponse> {
+        const params = new URLSearchParams();
+        if (options.days !== undefined)
+            params.set("days", String(options.days));
+        if (options.granularity) params.set("granularity", options.granularity);
+        if (options.period) params.set("period", options.period);
+
+        const qs = params.toString();
+        const url = `${this.baseUrl}/account/earnings${qs ? `?${qs}` : ""}`;
+
+        return this.getJson<DeveloperEarningsResponse>(url);
     }
 
     // ============================================================================

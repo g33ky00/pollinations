@@ -67,7 +67,8 @@ export async function callCommunityImageEndpoint(
                   size: `${safeParams.width}x${safeParams.height}`,
                   quality:
                       safeParams.quality === "hd" ? "high" : safeParams.quality,
-                  ...(safeParams.transparent || safeParams.background === "transparent"
+                  ...(safeParams.transparent ||
+                  safeParams.background === "transparent"
                       ? { background: "transparent", output_format: "png" }
                       : {}),
               }),

@@ -531,3 +531,7 @@ pollinations.ai is open-source software licensed under the [MIT license](LICENSE
 ---
 
 Made with ❤️ by the pollinations.ai team
+
+## Stack
+
+- TODO
